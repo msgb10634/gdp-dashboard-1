@@ -1,151 +1,76 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+# 웹 페이지 제목 및 설명
+st.title("🩸 개인 혈당 기록 및 진단 프로그램")
+st.write("혈당 수치를 입력하고 기록을 확인해 보세요.")
+
+# 1. 스트림릿 세션 상태(Session State) 초기화
+# 페이지가 새로고침되어도 데이터가 유지되도록 배열(리스트)을 생성합니다.
+if "blood_history" not in st.session_state:
+    st.session_state.blood_history = []
+
+# 2. 사용자 입력 위젯
+# 숫자 입력창과 데이터 추가 버튼 생성
+sugar_input = st.number_input(
+    "혈당량을 입력하세요 (mg/dL)", 
+    min_value=0, 
+    max_value=500, 
+    value=100, 
+    step=1
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# 버튼 디자인을 위해 레이아웃 분할
+col1, col2 = st.columns([1, 4])
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+with col1:
+    add_button = st.button("기록 추가", type="primary")
+with col2:
+    reset_button = st.button("기록 초기화")
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+# 3. 데이터 추가 및 판정 로직
+if add_button:
+    if sugar_input > 0:
+        # 혈당량에 따른 상태 판정
+        if sugar_input < 70:
+            status = "저혈당"
+            color_func = st.error # 빨간색 알림
+        elif sugar_input < 100:
+            status = "정상"
+            color_func = st.success # 초록색 알림
+        elif sugar_input < 126:
+            status = "당뇨위험군"
+            color_func = st.warning # 노란색 알림
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+            status = "고혈당(당뇨 가능성)"
+            color_func = st.error # 빨간색 알림
+        
+        # 세션 상태 리스트에 (입력값, 판정결과) 추가
+        st.session_state.blood_history.append({"혈당량": sugar_input, "상태": status})
+        
+        # 현재 입력 결과 출력
+        color_func(f"입력하신 혈당은 **{sugar_input} mg/dL** 이며, **[{status}]** 상태입니다.")
+    else:
+        st.info("0보다 큰 올바른 혈당 수치를 입력해 주세요.")
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+# 초기화 버튼을 누른 경우
+if reset_button:
+    st.session_state.blood_history = []
+    st.rerun()
+
+# 4. 결과 출력 (누적 데이터 시각화)
+st.markdown("---")
+st.subheader("📊 누적 혈당 기록")
+
+if st.session_state.blood_history:
+    # 리스트 데이터를 데이터프레임으로 변환하여 웹에 표로 출력
+    df = pd.DataFrame(st.session_state.blood_history)
+    
+    # 깔끔한 표(DataFrame)로 출력
+    st.dataframe(df, use_container_width=True)
+    
+    # 통계치 제공 (보너스 기능!)
+    avg_sugar = df["혈당량"].mean()
+    st.metric(label="현재까지의 평균 혈당", value=f"{avg_sugar:.1f} mg/dL")
+else:
+    st.info("아직 입력된 기록이 없습니다. 혈당을 입력하고 '기록 추가'를 눌러보세요.")
